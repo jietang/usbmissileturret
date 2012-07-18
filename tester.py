@@ -27,11 +27,11 @@ def move_for_time(secs, cmd):
     time.sleep(max(0, secs - (time.time() - start)))
     launcher.send_command(STOP)
 
-# reset_to_lower_left()
-# move_for_time(3, RIGHT)
-# move_for_time(1, UP)
+reset_to_lower_left()
+move_for_time(3, RIGHT)
+move_for_time(1, UP)
 
-move_for_time(0.1, RIGHT)
+# move_for_time(0.1, RIGHT)
 # for i in range(100):
 #     status = launcher.send_command(RIGHT)
 # status = launcher.send_command(STOP)

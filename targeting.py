@@ -1,9 +1,7 @@
 import random
 import time
-import heapq
 
 from usbturret import LEFT, RIGHT, UP, DOWN, STOP
-from client import RemoteLauncher
 from util import size_and_center, norm, diff
 
 # Exposure auto priority 1 -> 0
@@ -13,19 +11,19 @@ from util import size_and_center, norm, diff
 TOLERANCE = 50
 SUBTOLERANCE_X = TOLERANCE*0.25
 SUBTOLERANCE_Y = TOLERANCE*1.0
-MOVE_SLEEP_TIME = 0.02
+MAX_MOVE_SLEEP_TIME = 0.05
+P_MOVE_SLEEP_X = 0.001
 REFRESH_FREQUENCY = 0.1
 
 class Targeter(object):
-    def __init__(self, xmax, ymax):
+    def __init__(self, xmax, ymax, send_cmd_fn):
         print xmax, ymax
         self.center = (xmax / 2., ymax / 2.)
         self.correction = 0
         self.target = None
-        self.cmd_queue = []
         self.last_time = time.time()
 
-        self.launcher = RemoteLauncher()
+        self.send_cmd_fn = send_cmd_fn
 
     def update_target_rect(self, rect_misses):
         if rect_misses[1] == 0:
@@ -54,20 +52,24 @@ class Targeter(object):
         return last_command_sent
 
     def stop(self):
-        self.launcher.send_command(STOP)
+        self.send_cmd_fn(0.0, 0.0, STOP)
 
     def visual_servo(self):
         if self.target is None:
-            self.launcher.send_command(STOP)
+            self.stop()
             return STOP
 
         delta = diff((self.center[0], self.center[1] + self.correction), self.target)
-        print delta[0], delta[1], norm(delta)
         if norm(delta) < TOLERANCE:
-            self.launcher.send_command(STOP)
+            self.stop()
             return STOP
         else:
             current_cmd = 0
+
+            cur_time = time.time()
+            timeout_x = 0.0
+            timeout_y = 0.0
+
             cmd_to_add = None
             if delta[0] < -SUBTOLERANCE_X:
                 cmd_to_add = LEFT
@@ -75,27 +77,19 @@ class Targeter(object):
                 cmd_to_add = RIGHT
 
             if cmd_to_add:
-                heapq.heappush(self.cmd_queue, (MOVE_SLEEP_TIME, cmd_to_add))
+                timeout_x = min(abs(delta[0])*P_MOVE_SLEEP_X, MAX_MOVE_SLEEP_TIME)
+                print "move time: ", abs(delta[0])*P_MOVE_SLEEP_X
                 current_cmd |= cmd_to_add
 
-            if delta[1] < -SUBTOLERANCE_Y:
-                cmd_to_add = UP
-            elif delta[1] > SUBTOLERANCE_Y:
-                cmd_to_add = DOWN
+            # cmd_to_add = None
+            # if delta[1] < -SUBTOLERANCE_Y:
+            #     cmd_to_add = UP
+            # elif delta[1] > SUBTOLERANCE_Y:
+            #     cmd_to_add = DOWN
                 
-            if cmd_to_add:
-                heapq.heappush(self.cmd_queue, (0.1*MOVE_SLEEP_TIME, cmd_to_add))
-                current_cmd |= cmd_to_add
-
-            last_cmd_sent = current_cmd
-
-            start_time = time.time()
-            while self.cmd_queue:
-                self.launcher.send_command(STOP)
-                self.launcher.send_command(current_cmd)
-                sleep_time, cmd_to_remove = heapq.heappop(self.cmd_queue)
-                current_cmd ^= cmd_to_remove
-                time.sleep(max(0.0,sleep_time - (time.time() - start_time)))
-            # self.launcher.send_command(STOP)
-            return last_cmd_sent
+            # if cmd_to_add:
+            #     timeout_y = 0.1*MOVE_SLEEP_TIME
+            #     current_cmd |= cmd_to_add
+            self.send_cmd_fn(timeout_x + time.time(), timeout_y + time.time(), current_cmd)
+            return current_cmd
         # TODO adjust target based on face size

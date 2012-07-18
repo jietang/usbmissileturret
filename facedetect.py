@@ -9,10 +9,11 @@ import sharedmem as shm
 from common import clock, draw_str
 from video import create_capture
 
+from client import RemoteLauncher
 from targeting import Targeter
 from util import detect, draw_rects, size_and_center, norm, compare, contains
 
-from usbturret import UP, DOWN, LEFT, RIGHT
+from usbturret import UP, DOWN, LEFT, RIGHT, STOP
 
 help_message = '''
 USAGE: facedetect.py [--cascade <cascade_fn>] [--nested-cascade <cascade_fn>] [<video_source>]
@@ -29,6 +30,19 @@ manager = mp.Manager()
 possible_targets = manager.list()
 targets = []
 is_auto = False
+
+controller_thread = None
+
+controller_cv = threading.Condition()
+# controller_cv = mp.Condition()
+
+# [[x_timeout, x_cmd], [y_timeout, y_cmd]]
+controller_state = []
+# controller_state = manager.list()
+
+controller_state.append([0.0, LEFT])
+controller_state.append([0.0, DOWN])
+
 
 def draw_command(img, command):
     if not command:
@@ -56,6 +70,65 @@ def draw_command(img, command):
 
     cv2.rectangle(img, (int(h1*height),int(w1*width)), (int(h2*height), int(w2*width)), (255, 0, 0), -1)
 
+def controller(controller_state, should_stop, controller_cv, lock):
+    launcher = RemoteLauncher()
+    with controller_cv:
+        while True:
+            with lock:
+                if ord(should_stop.value):
+                    launcher.send_command(STOP)
+                    break
+
+            (x_timeout, x_cmd) = controller_state[0]
+            (y_timeout, y_cmd) = controller_state[1]
+            next_time = min(x_timeout, y_timeout)
+            if next_time - time.time() > 0:
+                print "whoo"
+                controller_cv.wait(next_time - time.time())
+            else:
+                print "waiting to be notified"
+                controller_cv.wait()
+
+            (x_timeout, x_cmd) = controller_state[0]
+            (y_timeout, y_cmd) = controller_state[1]
+            cur_time = time.time()
+
+            print
+            print
+            print x_timeout, y_timeout, (x_timeout > cur_time), (y_timeout > cur_time), cur_time
+            print
+            print
+
+            cmd = 0
+            if x_timeout > cur_time:
+                cmd |= x_cmd
+            if y_timeout > cur_time:
+                cmd |= y_cmd
+            if not cmd:
+                cmd = STOP
+
+            print "sending command: ", cmd
+            launcher.send_command(cmd)
+
+def add_controller_command(timeout_x, timeout_y, cmd):
+    global controller_state, controller_cv
+    (new_x_timeout, new_x_cmd), (new_y_timeout, new_y_cmd) = controller_state
+
+    if (cmd & UP) or (cmd & DOWN):
+        new_y_cmd = cmd
+        new_y_timeout = timeout_y
+    if (cmd & LEFT) or (cmd & RIGHT):
+        new_x_cmd = cmd
+        new_x_timeout = timeout_x
+    if cmd & STOP:
+        new_x_timeout = time.time()
+        new_y_timeout = time.time()
+
+    with controller_cv:
+        controller_state[0] = [new_x_timeout, new_x_cmd]
+        controller_state[1] = [new_y_timeout, new_y_cmd]
+        print "SENDING CMD: ", controller_state, time.time()
+        controller_cv.notify()
 
 def high_level_tracker(image, should_stop, lock, targets, cascade):
     # 1 thread, high level tracking
@@ -96,12 +169,15 @@ if __name__ == '__main__':
     height = img.shape[1]
     low_image = shm.zeros(img.shape[0:2], dtype=img.dtype)
 
-    targeter = Targeter(height, width)
+    controller_thread = threading.Thread(target=controller, args=(controller_state, stopping, controller_cv, the_lock))
+    # controller_thread = mp.Process(target=controller, args=(controller_state, stopping, controller_cv, the_lock))
+    controller_thread.start()
+
+    targeter = Targeter(height, width, add_controller_command)
 
     while True:
         t = clock()
         ret, img = cam.read()
-        print (clock() - t)*1000
 
         with the_lock:
             low_image[:] = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -164,7 +240,10 @@ if __name__ == '__main__':
         if key == 27:
             with the_lock:
                 stopping.value = chr(1)
+            with controller_cv:
+                controller_cv.notify()
             high_proc.join()
+            controller_thread.join()
             break
         elif key == ord('a'):
             is_auto = not is_auto
