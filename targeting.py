@@ -11,8 +11,8 @@ from util import size_and_center, norm, diff
 TOLERANCE = 50
 SUBTOLERANCE_X = TOLERANCE*0.25
 SUBTOLERANCE_Y = TOLERANCE*1.0
-MAX_MOVE_SLEEP_TIME = 0.05
-P_MOVE_SLEEP_X = 0.001
+MAX_MOVE_SLEEP_TIME = 0.04
+P_MOVE_SLEEP_X = 0.000005
 REFRESH_FREQUENCY = 0.1
 
 class Targeter(object):
@@ -90,6 +90,6 @@ class Targeter(object):
             # if cmd_to_add:
             #     timeout_y = 0.1*MOVE_SLEEP_TIME
             #     current_cmd |= cmd_to_add
-            self.send_cmd_fn(timeout_x + time.time(), timeout_y + time.time(), current_cmd)
+            self.send_cmd_fn(timeout_x + cur_time, timeout_y + cur_time, current_cmd)
             return current_cmd
         # TODO adjust target based on face size

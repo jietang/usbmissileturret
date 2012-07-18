@@ -72,43 +72,49 @@ def draw_command(img, command):
 
 def controller(controller_state, should_stop, controller_cv, lock):
     launcher = RemoteLauncher()
-    with controller_cv:
-        while True:
-            with lock:
-                if ord(should_stop.value):
-                    launcher.send_command(STOP)
-                    break
+    while True:
+        with lock:
+            if ord(should_stop.value):
+                launcher.send_command(STOP)
+                break
 
+        with controller_cv:
             (x_timeout, x_cmd) = controller_state[0]
             (y_timeout, y_cmd) = controller_state[1]
             next_time = min(x_timeout, y_timeout)
+            print x_timeout, y_timeout, next_time, (next_time - time.time()), (x_timeout - time.time() < 0) and (y_timeout - time.time() < 0)
+
+            # if 0.01 > next_time - time.time() > 0:
+            #     print "fake sleep"
+            #     time.sleep(next_time - time.time())
             if next_time - time.time() > 0:
-                print "whoo"
+                print "waiting to be notified or timeout"
                 controller_cv.wait(next_time - time.time())
             else:
-                print "waiting to be notified"
+                # print "waiting to be notified"
+                if (x_timeout - time.time() < 0) and (y_timeout - time.time() < 0):
+                    launcher.send_command(STOP)
                 controller_cv.wait()
 
             (x_timeout, x_cmd) = controller_state[0]
             (y_timeout, y_cmd) = controller_state[1]
-            cur_time = time.time()
+        cur_time = time.time()
 
-            print
-            print
-            print x_timeout, y_timeout, (x_timeout > cur_time), (y_timeout > cur_time), cur_time
-            print
-            print
+        # print
+        # print
+        # print x_timeout, y_timeout, (x_timeout > cur_time), (y_timeout > cur_time), cur_time, x_cmd, y_cmd
+        # print
+        # print
 
-            cmd = 0
-            if x_timeout > cur_time:
-                cmd |= x_cmd
-            if y_timeout > cur_time:
-                cmd |= y_cmd
-            if not cmd:
-                cmd = STOP
+        cmd = 0
+        if x_timeout > cur_time:
+            cmd |= x_cmd
+        if y_timeout > cur_time:
+            cmd |= y_cmd
+        if not cmd:
+            cmd = STOP
 
-            print "sending command: ", cmd
-            launcher.send_command(cmd)
+        launcher.send_command(cmd)
 
 def add_controller_command(timeout_x, timeout_y, cmd):
     global controller_state, controller_cv
@@ -127,7 +133,7 @@ def add_controller_command(timeout_x, timeout_y, cmd):
     with controller_cv:
         controller_state[0] = [new_x_timeout, new_x_cmd]
         controller_state[1] = [new_y_timeout, new_y_cmd]
-        print "SENDING CMD: ", controller_state, time.time()
+        #print "SENDING CMD: ", controller_state, time.time()
         controller_cv.notify()
 
 def high_level_tracker(image, should_stop, lock, targets, cascade):
@@ -228,11 +234,12 @@ if __name__ == '__main__':
         # print "targets: ", len(targets)
 
         dt = clock() - t
-        with the_lock:
-            if dt*1000 > 30:
-                print "long frame!"
-                print "time: ", dt*1000
-        draw_str(vis, (20, 20), 'time: %.1f ms' % (dt*1000))
+        # WARNING: DO NOT RE ENABLE
+        # with the_lock:
+        #     if dt*1000 > 30:
+        #         print "long frame!"
+        #         print "time: ", dt*1000 
+       draw_str(vis, (20, 20), 'time: %.1f ms' % (dt*1000))
 
         cv2.imshow('facedetect', vis)
 
