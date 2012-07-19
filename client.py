@@ -1,6 +1,6 @@
 import socket
 
-from usbturret import LEFT, RIGHT, UP, DOWN, STOP
+from usbturret import LEFT, RIGHT, UP, DOWN, STOP, FIRE, PRIME
 from server import LAUNCHER_EXIT
 
 class RemoteLauncher(object):
@@ -21,10 +21,10 @@ class RemoteLauncher(object):
         self._send(str(c))
 
     def fire(self):
-        pass
+        self._send(str(FIRE))
 
     def prime(self):
-        pass
+        self._send(str(PRIME))
 
     def shutdown(self):
         self._send(LAUNCHER_EXIT)

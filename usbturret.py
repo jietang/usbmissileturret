@@ -8,6 +8,7 @@ RIGHT = 8
 MOVE_MASK = 15
 FIRE = 16
 STOP = 32
+PRIME = 64 # made up, doesn't really need to be 64
 USB_CMD_TIMEOUT = 100
 FIRE_TIMEOUT = 4
 PRIME_TIMEOUT = 1.2

@@ -1,3 +1,4 @@
+#uvcdynctrl -d video1 -s "White Balance Temperature, Auto" -- 0
 import multiprocessing as mp
 import time
 import threading
@@ -75,7 +76,7 @@ def controller(controller_state, should_stop, controller_cv, lock):
     last_sent = [time.time()]
 
     def send_command(cmd):
-        print "CMD FREQ: ", time.time() - last_sent[0], cmd
+        # print "CMD FREQ: ", time.time() - last_sent[0], cmd
         launcher.send_command(cmd)
         last_sent[0] = time.time()
 
@@ -186,6 +187,11 @@ if __name__ == '__main__':
 
     targeter = Targeter(height, width, add_controller_command)
 
+    primed = True
+    firing = False
+    launcher = RemoteLauncher()
+    locked_counter = 0
+
     while True:
         t = clock()
         ret, img = cam.read()
@@ -234,7 +240,22 @@ if __name__ == '__main__':
 
         targets = next_targets
         if is_auto:
-            last_cmd_sent = targeter.update_targets(targets)
+            if firing and not primed:
+                launcher.prime()
+                time.sleep(1.2)
+                primed = True
+                locked_counter = 0
+            else: # either not firing, or already primed
+                last_cmd_sent = targeter.update_targets(targets)
+                if last_cmd_sent == STOP and len(targets):
+                    locked_counter += 1
+                if locked_counter > 20 and firing and primed:
+                    print "firing"
+                    launcher.fire()
+                    time.sleep(1.2)
+                    primed = False
+                    locked_counter = 0
+
             # draw_command(vis, last_cmd_sent)
         # print "targets: ", len(targets)
 
@@ -259,4 +280,7 @@ if __name__ == '__main__':
             break
         elif key == ord('a'):
             is_auto = not is_auto
-            print is_auto
+            print "AUTONOMOUS: ", is_auto
+        elif key == ord('t'):
+            firing = not firing
+            print "LIVE FIRE: ", firing

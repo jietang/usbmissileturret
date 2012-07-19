@@ -1,4 +1,4 @@
-from usbturret import USBMissileLauncher
+from usbturret import USBMissileLauncher, FIRE, PRIME
 
 import socket
 import select
@@ -56,6 +56,12 @@ class LauncherServer(object):
             print "processing: ", data
             if data == LAUNCHER_EXIT:
                 self.should_shutdown = True
+            elif int(data) == FIRE:
+                # don't respond to requests
+                self.launcher.fire()
+            elif int(data) == PRIME:
+                # don't respond to requests
+                self.launcher.prime()
             else:
                 self.launcher.send_command(int(data))
 
@@ -65,4 +71,3 @@ class LauncherServer(object):
 if __name__=="__main__":
     serve = LauncherServer()
     serve.serve()
-

@@ -52,7 +52,7 @@ class Targeter(object):
 
         last_command_sent = self.visual_servo()
         self.last_time = time.time()
-        return last_command_sent
+        return last_command_sent if self.target else None
 
     def stop(self):
         self.send_cmd_fn(0.0, 0.0, STOP)
