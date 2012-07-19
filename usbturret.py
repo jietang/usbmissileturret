@@ -19,8 +19,6 @@ def validate_command(c, last_status=0):
         return STOP
     if (c & LEFT) and (c & RIGHT):
         return STOP
-    if (c & FIRE) and (c & MOVE_MASK):
-        return STOP
     if (c & STOP):
         return STOP
     for cmd in (UP, DOWN, LEFT, RIGHT):

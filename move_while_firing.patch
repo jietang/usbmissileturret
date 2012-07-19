@@ -1,0 +1,288 @@
+diff --git a/client.py b/client.py
+index 41d31c7..87a4058 100644
+--- a/client.py
++++ b/client.py
+@@ -21,10 +21,10 @@ class RemoteLauncher(object):
+         self._send(str(c))
+ 
+     def fire(self):
+-        self._send(str(FIRE))
++        print "WTF DON'T CALL ME FIRE"
+ 
+     def prime(self):
+-        self._send(str(PRIME))
++        print "WTF DON'T CALL ME PRIME"
+ 
+     def shutdown(self):
+         self._send(LAUNCHER_EXIT)
+diff --git a/facedetect.py b/facedetect.py
+index 09b680c..8fd8aca 100644
+--- a/facedetect.py
++++ b/facedetect.py
+@@ -14,7 +14,7 @@ from client import RemoteLauncher
+ from targeting import Targeter
+ from util import detect, draw_rects, size_and_center, norm, compare, contains
+ 
+-from usbturret import UP, DOWN, LEFT, RIGHT, STOP
++from usbturret import UP, DOWN, LEFT, RIGHT, STOP, PRIME, FIRE
+ 
+ help_message = '''
+ USAGE: facedetect.py [--cascade <cascade_fn>] [--nested-cascade <cascade_fn>] [<video_source>]
+@@ -37,12 +37,13 @@ controller_thread = None
+ controller_cv = threading.Condition()
+ # controller_cv = mp.Condition()
+ 
+-# [[x_timeout, x_cmd], [y_timeout, y_cmd]]
++# [[x_timeout, x_cmd], [y_timeout, y_cmd], fire_cmd]
+ controller_state = []
+ # controller_state = manager.list()
+ 
+ controller_state.append([0.0, LEFT])
+ controller_state.append([0.0, DOWN])
++controller_state.append(None)
+ 
+ 
+ def draw_command(img, command):
+@@ -104,6 +105,13 @@ def controller(controller_state, should_stop, controller_cv, lock):
+ 
+             (x_timeout, x_cmd) = controller_state[0]
+             (y_timeout, y_cmd) = controller_state[1]
++            fire_cmd = controller_state[2]
++            
++            if fire_cmd:
++                # cancel fire commands after sent once
++                # do it while we have the lock held
++                controller_state[2] = None
++
+         cur_time = time.time()
+ 
+         # print
+@@ -117,6 +125,8 @@ def controller(controller_state, should_stop, controller_cv, lock):
+             cmd |= x_cmd
+         if y_timeout > cur_time:
+             cmd |= y_cmd
++        if fire_cmd:
++            cmd |= fire_cmd
+         if not cmd:
+             cmd = STOP
+ 
+@@ -124,7 +134,7 @@ def controller(controller_state, should_stop, controller_cv, lock):
+ 
+ def add_controller_command(timeout_x, timeout_y, cmd):
+     global controller_state, controller_cv
+-    (new_x_timeout, new_x_cmd), (new_y_timeout, new_y_cmd) = controller_state
++    (new_x_timeout, new_x_cmd), (new_y_timeout, new_y_cmd), new_fire_cmd = controller_state
+ 
+     if (cmd & UP) or (cmd & DOWN):
+         new_y_cmd = cmd
+@@ -132,6 +142,8 @@ def add_controller_command(timeout_x, timeout_y, cmd):
+     if (cmd & LEFT) or (cmd & RIGHT):
+         new_x_cmd = cmd
+         new_x_timeout = timeout_x
++    if (cmd & PRIME) or (cmd & FIRE):
++        new_fire_cmd = cmd
+     if cmd & STOP:
+         new_x_timeout = time.time()
+         new_y_timeout = time.time()
+@@ -139,6 +151,7 @@ def add_controller_command(timeout_x, timeout_y, cmd):
+     with controller_cv:
+         controller_state[0] = [new_x_timeout, new_x_cmd]
+         controller_state[1] = [new_y_timeout, new_y_cmd]
++        controller_state[2] = new_fire_cmd
+         #print "SENDING CMD: ", controller_state, time.time()
+         controller_cv.notify()
+ 
+@@ -187,10 +200,10 @@ if __name__ == '__main__':
+ 
+     targeter = Targeter(height, width, add_controller_command)
+ 
+-    primed = True
+-    firing = False
+-    launcher = RemoteLauncher()
+-    locked_counter = 0
++    is_firing_enabled = False
++    primed = [True]
++    locked_counter = [0]
++    handlers = {}
+ 
+     while True:
+         t = clock()
+@@ -238,23 +251,39 @@ if __name__ == '__main__':
+                 if misses < MAX_MISSES:
+                     next_targets.append((rect, misses+1))
+ 
++        # time based callbacks
++        if handlers:
++            cur_time = time.time()
++            for name, (run_time, the_cb) in handlers.items():
++                if cur_time > run_time:
++                    print "running cb: ", name
++                    the_cb()
++                    del handlers[name]
++
+         targets = next_targets
+         if is_auto:
+-            if firing and not primed:
+-                launcher.prime()
+-                time.sleep(1.2)
+-                primed = True
+-                locked_counter = 0
+-            else: # either not firing, or already primed
++            if is_firing_enabled and not primed[0] and not 'priming' in handlers:
++                def cb():
++                    primed[0] = True
++                    locked_counter[0] = 0
++                add_controller_command(0, 0, PRIME)
++
++                time.sleep(1.3)
++                cb()
++                # handlers['priming'] = (1.3+time.time(), cb)
++            else: # either not is_firing_enabled, or already primed
+                 last_cmd_sent = targeter.update_targets(targets)
+                 if last_cmd_sent == STOP and len(targets):
+-                    locked_counter += 1
+-                if locked_counter > 20 and firing and primed:
+-                    print "firing"
+-                    launcher.fire()
+-                    time.sleep(1.2)
+-                    primed = False
+-                    locked_counter = 0
++                    locked_counter[0] += 1
++                if locked_counter[0] > 20 and is_firing_enabled and primed[0] and not 'firing' in handlers:
++                    add_controller_command(0, 0, FIRE)
++                    def cb():
++                        primed[0] = False
++                        locked_counter[0] = 0
++
++                    time.sleep(1.3)
++                    cb()
++                    # handlers['firing'] = (5 + time.time(), cb)
+ 
+             # draw_command(vis, last_cmd_sent)
+         # print "targets: ", len(targets)
+@@ -282,5 +311,5 @@ if __name__ == '__main__':
+             is_auto = not is_auto
+             print "AUTONOMOUS: ", is_auto
+         elif key == ord('t'):
+-            firing = not firing
+-            print "LIVE FIRE: ", firing
++            is_firing_enabled = not is_firing_enabled
++            print "LIVE FIRE: ", is_firing_enabled
+diff --git a/server.py b/server.py
+index b3a1d6d..2f0c9cc 100644
+--- a/server.py
++++ b/server.py
+@@ -1,4 +1,4 @@
+-from usbturret import USBMissileLauncher, FIRE, PRIME
++from usbturret import USBMissileLauncher, FIRE, PRIME, STOP
+ 
+ import socket
+ import select
+@@ -6,7 +6,7 @@ import threading
+ import time
+ 
+ LAUNCHER_EXIT = "Shut"
+-POLL_RATE = 0.02
++POLL_RATE = 0.01
+ STATUS_INTERVAL = 0.5 # 250ms status poll
+ 
+ class LauncherServer(object):
+@@ -26,6 +26,9 @@ class LauncherServer(object):
+         self.launcher = USBMissileLauncher()
+         self.last_status_time = 0
+ 
++        self.firing = False
++        self.fire_timeout = 0.0
++
+     def fileno(self):
+         return self.socket.fileno()
+ 
+@@ -35,10 +38,17 @@ class LauncherServer(object):
+         try:
+             while not self.should_shutdown:
+                 t = time.time()
+-                if t - self.last_status_time > STATUS_INTERVAL:
++                if t - self.last_status_time > STATUS_INTERVAL and not self.firing:
+                     # heartbeat
+                     self.launcher.status()
+ 
++                if self.firing:
++                    status = self.launcher.status()
++                    if time.time() > self.fire_timeout or (status & FIRE):
++                        print "stop firing"
++                        time.sleep(POLL_RATE)
++                        self.firing = False
++
+                 r, w, e = select.select([self], [], [], sleep)
+                 if self in r:
+                     self.handle_request()
+@@ -56,14 +66,19 @@ class LauncherServer(object):
+             print "processing: ", data
+             if data == LAUNCHER_EXIT:
+                 self.should_shutdown = True
+-            elif int(data) == FIRE:
+-                # don't respond to requests
+-                self.launcher.fire()
+-            elif int(data) == PRIME:
+-                # don't respond to requests
+-                self.launcher.prime()
+             else:
+-                self.launcher.send_command(int(data))
++                cmd = int(data)
++                if cmd & FIRE:
++                    print "FIRING"
++                    self.firing = True
++                    self.fire_timeout = time.time() + 4
++                elif cmd & PRIME:
++                    print "PRIMING"
++                    self.firing = True
++                    self.fire_timeout = time.time() + 1.2
++                if self.firing:
++                    cmd = FIRE
++                self.launcher.send_command(cmd)
+ 
+         except socket.error:
+             return
+diff --git a/tester.py b/tester.py
+index 9541ebf..af31f54 100644
+--- a/tester.py
++++ b/tester.py
+@@ -1,5 +1,5 @@
+ import time
+-from usbturret import LEFT, RIGHT, UP, DOWN, STOP, USBMissileLauncher
++from usbturret import LEFT, RIGHT, UP, DOWN, STOP, USBMissileLauncher, FIRE
+ 
+ launcher = USBMissileLauncher()
+ 
+@@ -27,9 +27,15 @@ def move_for_time(secs, cmd):
+     time.sleep(max(0, secs - (time.time() - start)))
+     launcher.send_command(STOP)
+ 
+-reset_to_lower_left()
+-move_for_time(3, RIGHT)
+-move_for_time(1, UP)
++# reset_to_lower_left()
++# move_for_time(3, RIGHT)
++# move_for_time(1, UP)
++
++# launcher.send_command(RIGHT)
++# time.sleep(0.2)
++# launcher.send_command(FIRE | RIGHT)
++# time.sleep(1)
++# launcher.send_command(STOP)
+ 
+ # move_for_time(0.1, RIGHT)
+ # for i in range(100):
+diff --git a/usbturret.py b/usbturret.py
+index b68db16..674b435 100644
+--- a/usbturret.py
++++ b/usbturret.py
+@@ -19,8 +19,6 @@ def validate_command(c, last_status=0):
+         return STOP
+     if (c & LEFT) and (c & RIGHT):
+         return STOP
+-    if (c & FIRE) and (c & MOVE_MASK):
+-        return STOP
+     if (c & STOP):
+         return STOP
+     for cmd in (UP, DOWN, LEFT, RIGHT):
