@@ -11,9 +11,12 @@ from util import size_and_center, norm, diff
 TOLERANCE = 50
 SUBTOLERANCE_X = TOLERANCE*0.25
 SUBTOLERANCE_Y = TOLERANCE*1.0
-MAX_MOVE_SLEEP_TIME = 0.04
+MAX_MOVE_SLEEP_TIME_X = 0.0004
 P_MOVE_SLEEP_X = 0.000005
-REFRESH_FREQUENCY = 0.1
+# P_MOVE_SLEEP_X = 0.0001
+MAX_MOVE_SLEEP_TIME_Y = 0.0004
+P_MOVE_SLEEP_Y = 0.000005
+REFRESH_FREQUENCY = 0.06
 
 class Targeter(object):
     def __init__(self, xmax, ymax, send_cmd_fn):
@@ -77,19 +80,20 @@ class Targeter(object):
                 cmd_to_add = RIGHT
 
             if cmd_to_add:
-                timeout_x = min(abs(delta[0])*P_MOVE_SLEEP_X, MAX_MOVE_SLEEP_TIME)
-                print "move time: ", abs(delta[0])*P_MOVE_SLEEP_X
+                timeout_x = min(abs(delta[0])*P_MOVE_SLEEP_X, MAX_MOVE_SLEEP_TIME_Y)
+                # print "move time: ", abs(delta[0])*P_MOVE_SLEEP_X
                 current_cmd |= cmd_to_add
 
-            # cmd_to_add = None
-            # if delta[1] < -SUBTOLERANCE_Y:
-            #     cmd_to_add = UP
-            # elif delta[1] > SUBTOLERANCE_Y:
-            #     cmd_to_add = DOWN
+            cmd_to_add = None
+            if delta[1] < -SUBTOLERANCE_Y:
+                cmd_to_add = UP
+            elif delta[1] > SUBTOLERANCE_Y:
+                cmd_to_add = DOWN
                 
-            # if cmd_to_add:
-            #     timeout_y = 0.1*MOVE_SLEEP_TIME
-            #     current_cmd |= cmd_to_add
+            if cmd_to_add:
+                timeout_y = min(abs(delta[1])*P_MOVE_SLEEP_Y, MAX_MOVE_SLEEP_TIME_Y)
+                current_cmd |= cmd_to_add
+
             self.send_cmd_fn(timeout_x + cur_time, timeout_y + cur_time, current_cmd)
             return current_cmd
         # TODO adjust target based on face size

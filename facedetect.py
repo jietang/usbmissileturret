@@ -72,28 +72,33 @@ def draw_command(img, command):
 
 def controller(controller_state, should_stop, controller_cv, lock):
     launcher = RemoteLauncher()
+    last_sent = [time.time()]
+
+    def send_command(cmd):
+        print "CMD FREQ: ", time.time() - last_sent[0], cmd
+        launcher.send_command(cmd)
+        last_sent[0] = time.time()
+
     while True:
-        with lock:
-            if ord(should_stop.value):
-                launcher.send_command(STOP)
-                break
+        if ord(should_stop.value):
+            launcher.send_command(STOP)
+            break
 
         with controller_cv:
             (x_timeout, x_cmd) = controller_state[0]
             (y_timeout, y_cmd) = controller_state[1]
             next_time = min(x_timeout, y_timeout)
-            print x_timeout, y_timeout, next_time, (next_time - time.time()), (x_timeout - time.time() < 0) and (y_timeout - time.time() < 0)
+            # print x_timeout, y_timeout, next_time, (next_time - time.time()), (x_timeout - time.time() < 0) and (y_timeout - time.time() < 0)
 
             # if 0.01 > next_time - time.time() > 0:
             #     print "fake sleep"
             #     time.sleep(next_time - time.time())
             if next_time - time.time() > 0:
-                print "waiting to be notified or timeout"
                 controller_cv.wait(next_time - time.time())
             else:
                 # print "waiting to be notified"
                 if (x_timeout - time.time() < 0) and (y_timeout - time.time() < 0):
-                    launcher.send_command(STOP)
+                    send_command(STOP)
                 controller_cv.wait()
 
             (x_timeout, x_cmd) = controller_state[0]
@@ -114,7 +119,7 @@ def controller(controller_state, should_stop, controller_cv, lock):
         if not cmd:
             cmd = STOP
 
-        launcher.send_command(cmd)
+        send_command(cmd)
 
 def add_controller_command(timeout_x, timeout_y, cmd):
     global controller_state, controller_cv
@@ -239,7 +244,7 @@ if __name__ == '__main__':
         #     if dt*1000 > 30:
         #         print "long frame!"
         #         print "time: ", dt*1000 
-       draw_str(vis, (20, 20), 'time: %.1f ms' % (dt*1000))
+        draw_str(vis, (20, 20), 'time: %.1f ms' % (dt*1000))
 
         cv2.imshow('facedetect', vis)
 
