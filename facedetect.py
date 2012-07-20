@@ -21,6 +21,9 @@ from usbturret import UP, DOWN, LEFT, RIGHT, STOP, USBMissileLauncher
 from client import RemoteLauncher
 from espeak import speak
 
+import recog
+
+
 help_message = '''
 USAGE: facedetect.py [--cascade <cascade_fn>] [--nested-cascade <cascade_fn>] [<video_source>]
 '''
@@ -230,104 +233,124 @@ if __name__ == '__main__':
 
     primed = True
     firing = False
+    recognizing = False
     locked_counter = 0
 
-    while True:
-        t = clock()
-        ret, img = cam.read()
+    with recog.RecognizerManager() as recognizer:
+        while True:
+            t = clock()
+            ret, img = cam.read()
 
-        with the_lock:
-            low_image[:] = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            low_image[:] = cv2.equalizeHist(low_image)
-
-        if high_proc is None:
-            high_proc = mp.Process(target=high_level_tracker, args=(low_image, stopping, the_lock, possible_targets, cascade,))
-            high_proc.start()
-
-        with the_lock:
-            if len(possible_targets) > 0:
-                for rect in possible_targets:
-                    if contains(targets, rect):
-                        continue
-                    targets.append((rect, 0, np.zeros(2)))
-                possible_targets[:] = []
-
-        vis = img.copy()
-        next_targets = []
-
-        for rect, misses, velocity in targets:
-            x1, y1, x2, y2 = rect
             with the_lock:
-                roi = low_image[max(0, y1-BUFFER):min(width, y2+BUFFER), max(0, x1-BUFFER):min(height, x2+BUFFER)]
+                low_image[:] = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                low_image[:] = cv2.equalizeHist(low_image)
 
-            # draw_rects(vis, [[max(0, x1-BUFFER), max(0, y1-BUFFER), min(height, x2+BUFFER), min(width, y2+BUFFER)]], (255,0,0))
+            if high_proc is None:
+                high_proc = mp.Process(target=high_level_tracker, args=(low_image, stopping, the_lock, possible_targets, cascade,))
+                high_proc.start()
 
-            subt = clock()
-            s, c = size_and_center(rect)
-            subtargets = detect(roi.copy(), cascade_nested, size=(max(30, s[0]-REFIND_BUFFER), max(30, s[1]-REFIND_BUFFER)))
-            # with the_lock:
-            #     print "subtarget detect: ", clock() - subt
-            if len(subtargets) == 1:
-                if not contains(next_targets, subtargets[0]):
+            with the_lock:
+                if len(possible_targets) > 0:
+                    for rect in possible_targets:
+                        if contains(targets, rect):
+                            continue
+                        targets.append((rect, 0, np.zeros(2)))
+                    possible_targets[:] = []
+
+            vis = img.copy()
+            next_targets = []
+
+            for rect, misses, velocity in targets:
+                x1, y1, x2, y2 = rect
+                with the_lock:
+                    roi = low_image[max(0, y1-BUFFER):min(width, y2+BUFFER), max(0, x1-BUFFER):min(height, x2+BUFFER)]
+
+                # draw_rects(vis, [[max(0, x1-BUFFER), max(0, y1-BUFFER), min(height, x2+BUFFER), min(width, y2+BUFFER)]], (255,0,0))
+
+                subt = clock()
+                s, c = size_and_center(rect)
+                subtargets = detect(roi.copy(), cascade_nested, size=(max(30, s[0]-REFIND_BUFFER), max(30, s[1]-REFIND_BUFFER)))
+                # with the_lock:
+                #     print "subtarget detect: ", clock() - subt
+                if len(subtargets) == 1:
                     sx1, sy1, sx2, sy2 = subtargets[0]
-                    fixed_rect = [max(0, x1-BUFFER)+sx1,max(0, y1-BUFFER)+sy1,max(0, x1-BUFFER)+sx2,max(0, y1-BUFFER)+sy2]
+                    if not contains(next_targets, subtargets[0]):
+                        fixed_rect = [max(0, x1-BUFFER)+sx1,max(0, y1-BUFFER)+sy1,max(0, x1-BUFFER)+sx2,max(0, y1-BUFFER)+sy2]
 
-                    s_last, c_last = size_and_center(fixed_rect)
+                        s_last, c_last = size_and_center(fixed_rect)
 
-                    next_targets.append((fixed_rect, 0, VELOCITY_DECAY*velocity+(1-VELOCITY_DECAY)*np.array(diff(c_last, c))))
-                vis_roi = vis[max(0, y1-BUFFER):min(width, y2+BUFFER), max(0, x1-BUFFER):min(height, x2+BUFFER)]
-                draw_rects(vis_roi, subtargets, (0, 255, 0))
-            else:
-                # draw_rects(vis, [rect], (0,0,255))
-                if misses < MAX_MISSES:
-                    next_targets.append((rect, misses+1, np.zeros(2)))
+                        next_targets.append((fixed_rect, 0, VELOCITY_DECAY*velocity+(1-VELOCITY_DECAY)*np.array(diff(c_last, c))))
+                    vis_roi = vis[max(0, y1-BUFFER):min(width, y2+BUFFER), max(0, x1-BUFFER):min(height, x2+BUFFER)]
+                    
+                    if recognizing:
+                        predictions = recognizer.predict(cv.fromarray(detection_image))
+                        for i, (label, confidence) in enumerate(predictions):
+                            color = recog.LABEL_COLORS[label]
+                            cv2.putText(vis_roi,
+                                "%s (%s)" % (recog.LABELS[label], confidence),
+                                (sx1 + 2, sy1 + 20 + 20 * i),
+                                cv2.FONT_HERSHEY_PLAIN, 1.1, color)
+                        winning_label = get_overall_prediction(predictions)
 
-        targets = next_targets
-        if is_auto:
-            if firing and not primed:
-                launcher.prime()
-                primed = True
-                locked_counter = 0
-            else: # either not firing, or already primed
-                last_cmd_sent = targeter.update_targets(targets)
-                if last_cmd_sent == STOP and len(targets):
-                    locked_counter += 1
-                if locked_counter > 5 and firing and primed:
-                    print "firing"
-                    lolz = threading.Thread(target=lolz_thread, args=("pics/%d" % int(time.time()), cam))
-                    lolz.start()
-                    launcher.fire()
-                    lolz.join()
+                        rect_coor = recog.LABEL_COLORS[winning_label]
+                    else:
+                        rect_color = (0, 255, 255)
+                    draw_rects(vis_roi, subtargets, rect_color)
 
-                    primed = False
+                else:
+                    # draw_rects(vis, [rect], (0,0,255))
+                    if misses < MAX_MISSES:
+                        next_targets.append((rect, misses+1, np.zeros(2)))
+
+            targets = next_targets
+            if is_auto:
+                if firing and not primed:
+                    launcher.prime()
+                    primed = True
                     locked_counter = 0
+                else: # either not firing, or already primed
+                    last_cmd_sent = targeter.update_targets(targets)
+                    if last_cmd_sent == STOP and len(targets):
+                        locked_counter += 1
+                    if locked_counter > 5 and firing and primed:
+                        print "firing"
+                        lolz = threading.Thread(target=lolz_thread, args=("pics/%d" % int(time.time()), cam))
+                        lolz.start()
+                        launcher.fire()
+                        lolz.join()
 
-            # draw_command(vis, last_cmd_sent)
-        # print "targets: ", len(targets)
+                        primed = False
+                        locked_counter = 0
 
-        dt = clock() - t
-        # WARNING: DO NOT RE ENABLE
-        # with the_lock:
-        #     if dt*1000 > 30:
-        #         print "long frame!"
-        #         print "time: ", dt*1000 
-        draw_str(vis, (20, 20), 'time: %.1f ms' % (dt*1000))
+                # draw_command(vis, last_cmd_sent)
+            # print "targets: ", len(targets)
 
-        cv2.imshow('facedetect', vis)
+            dt = clock() - t
+            # WARNING: DO NOT RE ENABLE
+            # with the_lock:
+            #     if dt*1000 > 30:
+            #         print "long frame!"
+            #         print "time: ", dt*1000 
+            draw_str(vis, (20, 20), 'time: %.1f ms' % (dt*1000))
 
-        key = cv2.waitKey(max(1,10-int(dt)))
-        if key == 27:
-            with the_lock:
-                stopping.value = chr(1)
-            with controller_cv:
-                controller_cv.notify()
-            high_proc.join()
-            # controller_thread.join()
-            break
-        elif key == ord('a'):
-            is_auto = not is_auto
-            print "AUTONOMOUS: ", is_auto
-        elif key == ord('t'):
-            firing = not firing
-            print "LIVE FIRE: ", firing
+            cv2.imshow('facedetect', vis)
+
+            key = cv2.waitKey(max(1,10-int(dt)))
+            if key == 27:
+                with the_lock:
+                    stopping.value = chr(1)
+                with controller_cv:
+                    controller_cv.notify()
+                high_proc.join()
+                # controller_thread.join()
+                break
+            elif key == ord('a'):
+                is_auto = not is_auto
+                print "AUTONOMOUS: ", is_auto
+            elif key == ord('t'):
+                firing = not firing
+                print "LIVE FIRE: ", firing
+            elif key == ord('r'):
+                recognizing = not recognizing
+                print "RECOGNITION: ", recognizing
     cv2.destroyAllWindows()
