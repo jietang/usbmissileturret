@@ -95,14 +95,14 @@ if __name__ == '__main__':
                 for rect in possible_targets:
                     if contains(targets, rect):
                         continue
-                    targets.append((rect, 0))
+                    targets.append((rect, 0, None))
                 possible_targets[:] = []
 
         vis = img.copy()
         next_targets = []
 
         last_time = time.time()
-        for rect, misses in targets:
+        for rect, misses, _ in targets:
             x1, y1, x2, y2 = rect
             with the_lock:
                 roi = low_image[max(0, y1-BUFFER):min(width, y2+BUFFER), max(0, x1-BUFFER):min(height, x2+BUFFER)]
@@ -116,7 +116,7 @@ if __name__ == '__main__':
             if len(subtargets) == 1:
                 sx1, sy1, sx2, sy2 = subtargets[0]
                 if not contains(next_targets, subtargets[0]):
-                    next_targets.append(([max(0, x1-BUFFER)+sx1,max(0, y1-BUFFER)+sy1,max(0, x1-BUFFER)+sx2,max(0, y1-BUFFER)+sy2], 0))
+                    next_targets.append(([max(0, x1-BUFFER)+sx1,max(0, y1-BUFFER)+sy1,max(0, x1-BUFFER)+sx2,max(0, y1-BUFFER)+sy2], 0, None))
                 vis_roi = vis[max(0, y1-BUFFER):min(width, y2+BUFFER), max(0, x1-BUFFER):min(height, x2+BUFFER)]
                 draw_rects(vis_roi, subtargets, (0, 255, 0))
                 cv.SaveImage("%s/roi/%s.pgm" % (output_dir, time.time()), cv.fromarray(roi_copy, allowND=True))
@@ -124,7 +124,7 @@ if __name__ == '__main__':
             else:
                 # draw_rects(vis, [rect], (0,0,255))
                 if misses < MAX_MISSES:
-                    next_targets.append((rect, misses+1))
+                    next_targets.append((rect, misses+1, None))
 
         targets = next_targets
         if is_auto:

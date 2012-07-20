@@ -1,3 +1,4 @@
+from collections import defaultdict
 import multiprocessing as mp
 import os
 import socket
@@ -67,7 +68,7 @@ def scale_to_recognizer_input_size(image):
     return mat
 
 class Recognizer():
-    HOSTPORT = ("karl-desktop0", 2232)
+    HOSTPORT = ("karl-desktop0", 2233)
 
     def __init__(self):
         self.sock = None
@@ -78,6 +79,9 @@ class Recognizer():
         self.sock.connect(Recognizer.HOSTPORT)
         self.rfile = self.sock.makefile("r")
         print "connected."
+        print "sleeping to let server train models...",
+        time.sleep(3)
+        print "done."
         return self
 
     def __exit__(self, *exc_info):
@@ -89,12 +93,22 @@ class Recognizer():
     def predict(self, image):
         assert self.sock, "you must call predict inside a 'with' block"
         mat = scale_to_recognizer_input_size(image)
+
+        # there must be a better way to do this
         data = "".join("".join(chr(int(mat[i, j])) for j in xrange(RECOG_SIZE)) for i in xrange(RECOG_SIZE))
+
         assert len(data) == NUM_PIXELS, "data had wrong length: %d" % len(data)
         self.sock.sendall(data)
-        label = int(self.rfile.readline().strip())
-        confidence = float(self.rfile.readline().strip())
-        return label, confidence
+
+        results = []
+        for i in xrange(3):
+            label = int(self.rfile.readline().strip())
+            confidence = float(self.rfile.readline().strip())
+            results.append((label, confidence))
+        return results
+
+LABELS = ["Jie", "Karl"]
+LABEL_COLORS = [(100, 255, 100), (100, 100, 255)]
 
 if __name__ == '__main__':
     import sys, getopt
@@ -156,9 +170,24 @@ if __name__ == '__main__':
                     if not contains(next_targets, subtargets[0]):
                         next_targets.append(([max(0, x1-BUFFER)+sx1,max(0, y1-BUFFER)+sy1,max(0, x1-BUFFER)+sx2,max(0, y1-BUFFER)+sy2], 0, None))
                     vis_roi = vis[max(0, y1-BUFFER):min(width, y2+BUFFER), max(0, x1-BUFFER):min(height, x2+BUFFER)]
-                    draw_rects(vis_roi, subtargets, (0, 255, 0))
+
+                    detection_image = roi_copy[sy1:sy2, sx1:sx2]
+                    #cv2.imshow('detection', detection_image)
                     
-                    print "prediction:", recognizer.predict(cv.fromarray(roi[sx1:sx2, sy1:sy2]))
+                    label_counts = defaultdict(int)
+                    #ta = time.time()
+                    predictions = recognizer.predict(cv.fromarray(detection_image))
+                    #print "prediction took %d ms" % ((time.time() - ta) * 1000)
+                    for i, (label, confidence) in enumerate(predictions):
+                        color = LABEL_COLORS[label]
+                        cv2.putText(vis_roi,
+                            "%s (%s)" % (LABELS[label], confidence),
+                            (sx1 + 2, sy1 + 20 + 20 * i),
+                            cv2.FONT_HERSHEY_PLAIN, 1.1, color)
+                        label_counts[label] += 1
+                    winning_label = max(xrange(len(LABELS)), key=lambda x: label_counts[x])
+
+                    draw_rects(vis_roi, subtargets, LABEL_COLORS[winning_label])
 
                 else:
                     # draw_rects(vis, [rect], (0,0,255))

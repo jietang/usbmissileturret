@@ -19,8 +19,9 @@ def run(port, cmd):
                     if len(data) < 1024:
                         break
                     proc.stdin.write(data)
-                    self.request.sendall(proc.stdout.readline())
-                    self.request.sendall(proc.stdout.readline())
+                    for i in xrange(3):
+                        self.request.sendall(proc.stdout.readline())
+                        self.request.sendall(proc.stdout.readline())
                 print "done."
             finally:
                 proc.stdin.close()
