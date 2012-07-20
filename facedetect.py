@@ -6,6 +6,7 @@ import os
 import socket
 import struct
 
+import numpy as np
 import cv2
 import cv2.cv as cv
 import sharedmem as shm
@@ -14,14 +15,16 @@ from common import clock, draw_str
 from video import create_capture
 
 from targeting import Targeter
-from util import detect, draw_rects, size_and_center, norm, compare, contains
+from util import detect, diff, draw_rects, size_and_center, norm, compare, contains
 
 from usbturret import UP, DOWN, LEFT, RIGHT, STOP, USBMissileLauncher
+from client import RemoteLauncher
 
 help_message = '''
 USAGE: facedetect.py [--cascade <cascade_fn>] [--nested-cascade <cascade_fn>] [<video_source>]
 '''
 
+VELOCITY_DECAY = 0.75
 BUFFER = 50
 REFIND_BUFFER = 30
 MAX_MISSES = 5
@@ -150,7 +153,7 @@ def add_controller_command(timeout_x, timeout_y, cmd):
                 cmd |= c
         if not cmd:
             break
-        next_time = max(sorted(cmds)[0][0] - time.time(), 0.001)
+        next_time = max(sorted(cmds)[0][0] - time.time(), 0.01)
 
         launcher.send_command(cmd)
         time.sleep(next_time)
@@ -216,9 +219,9 @@ if __name__ == '__main__':
     height = img.shape[1]
     low_image = shm.zeros(img.shape[0:2], dtype=img.dtype)
 
-    controller_thread = threading.Thread(target=controller, args=(controller_state, stopping, controller_cv, the_lock))
+    # controller_thread = threading.Thread(target=controller, args=(controller_state, stopping, controller_cv, the_lock))
     # controller_thread = mp.Process(target=controller, args=(controller_state, stopping, controller_cv, the_lock))
-    controller_thread.start()
+    # controller_thread.start()
 
     targeter = Targeter(height, width, add_controller_command)
 
@@ -245,13 +248,13 @@ if __name__ == '__main__':
                 for rect in possible_targets:
                     if contains(targets, rect):
                         continue
-                    targets.append((rect, 0))
+                    targets.append((rect, 0, np.zeros(2)))
                 possible_targets[:] = []
 
         vis = img.copy()
         next_targets = []
 
-        for rect, misses in targets:
+        for rect, misses, velocity in targets:
             x1, y1, x2, y2 = rect
             with the_lock:
                 roi = low_image[max(0, y1-BUFFER):min(width, y2+BUFFER), max(0, x1-BUFFER):min(height, x2+BUFFER)]
@@ -266,13 +269,17 @@ if __name__ == '__main__':
             if len(subtargets) == 1:
                 if not contains(next_targets, subtargets[0]):
                     sx1, sy1, sx2, sy2 = subtargets[0]
-                    next_targets.append(([max(0, x1-BUFFER)+sx1,max(0, y1-BUFFER)+sy1,max(0, x1-BUFFER)+sx2,max(0, y1-BUFFER)+sy2], 0))
+                    fixed_rect = [max(0, x1-BUFFER)+sx1,max(0, y1-BUFFER)+sy1,max(0, x1-BUFFER)+sx2,max(0, y1-BUFFER)+sy2]
+
+                    s_last, c_last = size_and_center(fixed_rect)
+
+                    next_targets.append((fixed_rect, 0, VELOCITY_DECAY*velocity+(1-VELOCITY_DECAY)*np.array(diff(c_last, c))))
                 vis_roi = vis[max(0, y1-BUFFER):min(width, y2+BUFFER), max(0, x1-BUFFER):min(height, x2+BUFFER)]
                 draw_rects(vis_roi, subtargets, (0, 255, 0))
             else:
                 # draw_rects(vis, [rect], (0,0,255))
                 if misses < MAX_MISSES:
-                    next_targets.append((rect, misses+1))
+                    next_targets.append((rect, misses+1, np.zeros(2)))
 
         targets = next_targets
         if is_auto:
@@ -318,7 +325,7 @@ if __name__ == '__main__':
             with controller_cv:
                 controller_cv.notify()
             high_proc.join()
-            controller_thread.join()
+            # controller_thread.join()
             break
         elif key == ord('a'):
             is_auto = not is_auto

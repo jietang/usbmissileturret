@@ -30,9 +30,9 @@ def compare(r1, r2):
     facesize = 0.5*(norm(s1) + norm(s2))
 
     return 1/facesize * norm(diff(s1, s2)) + 1/facesize * norm(diff(c1, c2))
-        
+
 def contains(targets, rect):
-    for r, misses in targets:
+    for r, _, _ in targets:
         if compare(r, rect) < 0.75:
             return True
     return False

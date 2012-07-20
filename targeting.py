@@ -36,8 +36,7 @@ class Targeter(object):
     def update_target_rect(self, rect_misses):
         if rect_misses[1] == 0:
             size, center = size_and_center(rect_misses[0])
-            self.target = center
-            print size[0], distance_correction(size[0])
+            self.target = center + rect_misses[2]
             self.correction = distance_correction(size[0])
         else:
             self.target = None
@@ -59,7 +58,7 @@ class Targeter(object):
 
         last_command_sent = self.visual_servo()
         self.last_time = time.time()
-        return last_command_sent if self.target else None
+        return last_command_sent if self.target is not None else None
 
     def stop(self):
         self.send_cmd_fn(0.0, 0.0, STOP)
