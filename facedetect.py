@@ -19,6 +19,7 @@ from util import detect, diff, draw_rects, size_and_center, norm, compare, conta
 
 from usbturret import UP, DOWN, LEFT, RIGHT, STOP, USBMissileLauncher
 from client import RemoteLauncher
+from espeak import speak
 
 help_message = '''
 USAGE: facedetect.py [--cascade <cascade_fn>] [--nested-cascade <cascade_fn>] [<video_source>]
@@ -76,11 +77,12 @@ def draw_command(img, command):
     cv2.rectangle(img, (int(h1*height),int(w1*width)), (int(h2*height), int(w2*width)), (255, 0, 0), -1)
 
 def lolz_thread(basepath, cam):
+    speak()
     start = time.time()
     last_time = time.time()
     i = 0
     os.mkdir(basepath)
-    while time.time() - start < 1.6:
+    while time.time() - start < 1.4:
         ret, img = cam.read()
         if time.time() - last_time > 0.0:
             last_time = time.time()
