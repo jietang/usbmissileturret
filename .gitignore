@@ -1,4 +1,9 @@
 __pycache__
 *.pyc
 *.swp
+CMakeFiles
+CMakeCache.txt
+Makefile
+*.cmake
+cpp_recognizer/RecogServer
 
