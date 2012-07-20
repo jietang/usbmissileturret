@@ -32,7 +32,7 @@ def compare(r1, r2):
     return 1/facesize * norm(diff(s1, s2)) + 1/facesize * norm(diff(c1, c2))
 
 def contains(targets, rect):
-    for r, _, _ in targets:
+    for r, _, _, _ in targets:
         if compare(r, rect) < 0.75:
             return True
     return False

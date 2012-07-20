@@ -29,6 +29,8 @@ USAGE: facedetect.py [--cascade <cascade_fn>] [--nested-cascade <cascade_fn>] [<
 '''
 
 VELOCITY_DECAY = 0.75
+KARLNESS_DECAY = 0.75
+KARLNESS_THRESHOLD = 0.6
 BUFFER = 50
 REFIND_BUFFER = 30
 MAX_MISSES = 5
@@ -254,13 +256,13 @@ if __name__ == '__main__':
                     for rect in possible_targets:
                         if contains(targets, rect):
                             continue
-                        targets.append((rect, 0, np.zeros(2)))
+                        targets.append((rect, 0, np.zeros(2), 0))
                     possible_targets[:] = []
 
             vis = img.copy()
             next_targets = []
 
-            for rect, misses, velocity in targets:
+            for rect, misses, velocity, karlness in targets:
                 x1, y1, x2, y2 = rect
                 with the_lock:
                     roi = low_image[max(0, y1-BUFFER):min(width, y2+BUFFER), max(0, x1-BUFFER):min(height, x2+BUFFER)]
@@ -274,33 +276,46 @@ if __name__ == '__main__':
                 #     print "subtarget detect: ", clock() - subt
                 if len(subtargets) == 1:
                     sx1, sy1, sx2, sy2 = subtargets[0]
+                    vis_roi = vis[max(0, y1-BUFFER):min(width, y2+BUFFER), max(0, x1-BUFFER):min(height, x2+BUFFER)]
+                    
+                    if recognizing:
+                        detection_image = roi[sy1:sy2, sx1:sx2]
+                        predictions = recognizer.predict(cv.fromarray(detection_image))
+                        for i, (label, confidence) in enumerate(predictions):
+                            color = recog.LABEL_COLORS[label]
+                            who = recog.LABELS[label]
+                            cv2.putText(vis_roi,
+                                "%s (%s)" % (who, confidence),
+                                (sx1 + 2, sy1 + 20 + 20 * i),
+                                cv2.FONT_HERSHEY_PLAIN, 1.1, color)
+                        winning_label = recog.get_overall_prediction(predictions)
+
+                        #rect_color = recog.LABEL_COLORS[winning_label]
+                        karlness_update = 1 if who == "Karl" else 0
+                    else:
+                        #rect_color = (0, 255, 255)
+                        karlness_update = 1
+
+                    karlness = KARLNESS_DECAY * karlness + (1 - KARLNESS_DECAY) * karlness_update
+                    rect_color = (0, 255 * (1 - karlness), 255 * karlness)
+
+                    draw_rects(vis_roi, subtargets, rect_color)
+
                     if not contains(next_targets, subtargets[0]):
                         fixed_rect = [max(0, x1-BUFFER)+sx1,max(0, y1-BUFFER)+sy1,max(0, x1-BUFFER)+sx2,max(0, y1-BUFFER)+sy2]
 
                         s_last, c_last = size_and_center(fixed_rect)
 
-                        next_targets.append((fixed_rect, 0, VELOCITY_DECAY*velocity+(1-VELOCITY_DECAY)*np.array(diff(c_last, c))))
-                    vis_roi = vis[max(0, y1-BUFFER):min(width, y2+BUFFER), max(0, x1-BUFFER):min(height, x2+BUFFER)]
-                    
-                    if recognizing:
-                        predictions = recognizer.predict(cv.fromarray(detection_image))
-                        for i, (label, confidence) in enumerate(predictions):
-                            color = recog.LABEL_COLORS[label]
-                            cv2.putText(vis_roi,
-                                "%s (%s)" % (recog.LABELS[label], confidence),
-                                (sx1 + 2, sy1 + 20 + 20 * i),
-                                cv2.FONT_HERSHEY_PLAIN, 1.1, color)
-                        winning_label = get_overall_prediction(predictions)
-
-                        rect_coor = recog.LABEL_COLORS[winning_label]
-                    else:
-                        rect_color = (0, 255, 255)
-                    draw_rects(vis_roi, subtargets, rect_color)
-
+                        next_targets.append((
+                            fixed_rect,
+                            0,
+                            VELOCITY_DECAY*velocity+(1-VELOCITY_DECAY)*np.array(diff(c_last, c)),
+                            karlness
+                        ))
                 else:
                     # draw_rects(vis, [rect], (0,0,255))
                     if misses < MAX_MISSES:
-                        next_targets.append((rect, misses+1, np.zeros(2)))
+                        next_targets.append((rect, misses+1, np.zeros(2), 0))
 
             targets = next_targets
             if is_auto:
@@ -309,8 +324,9 @@ if __name__ == '__main__':
                     primed = True
                     locked_counter = 0
                 else: # either not firing, or already primed
-                    last_cmd_sent = targeter.update_targets(targets)
-                    if last_cmd_sent == STOP and len(targets):
+                    victims = [tgt for tgt in targets if tgt[3] >= KARLNESS_THRESHOLD]
+                    last_cmd_sent = targeter.update_targets(victims)
+                    if last_cmd_sent == STOP and victims:
                         locked_counter += 1
                     if locked_counter > 5 and firing and primed:
                         print "firing"
