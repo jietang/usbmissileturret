@@ -5,6 +5,7 @@ import threading
 import os
 import socket
 import struct
+import random
 
 import numpy as np
 import cv2
@@ -77,7 +78,7 @@ def draw_command(img, command):
     cv2.rectangle(img, (int(h1*height),int(w1*width)), (int(h2*height), int(w2*width)), (255, 0, 0), -1)
 
 def lolz_thread(basepath, cam):
-    speak()
+    # speak()
     start = time.time()
     last_time = time.time()
     i = 0
@@ -185,6 +186,9 @@ def add_controller_command(timeout_x, timeout_y, cmd):
 
 def high_level_tracker(image, should_stop, lock, targets, cascade):
     # 1 thread, high level tracking
+    last_taunt_time = 0
+    next_taunt_wait = 3*(1+random.random())
+    
     while True:
         with lock:
             if ord(should_stop.value):
@@ -199,6 +203,12 @@ def high_level_tracker(image, should_stop, lock, targets, cascade):
         if len(rects) > 0:
             with lock:
                 targets[:] = rects
+
+
+            if (time.time() - last_taunt_time) > next_taunt_wait:
+                speak()
+                last_taunt_time = time.time()
+                next_taunt_wait = 3*(1+random.random())
 
 if __name__ == '__main__':
     import sys, getopt
@@ -283,6 +293,7 @@ if __name__ == '__main__':
                     next_targets.append((rect, misses+1, np.zeros(2)))
 
         targets = next_targets
+
         if is_auto:
             if firing and not primed:
                 launcher.prime()
@@ -292,7 +303,7 @@ if __name__ == '__main__':
                 last_cmd_sent = targeter.update_targets(targets)
                 if last_cmd_sent == STOP and len(targets):
                     locked_counter += 1
-                if locked_counter > 5 and firing and primed:
+                if locked_counter > 4 and firing and primed:
                     print "firing"
                     lolz = threading.Thread(target=lolz_thread, args=("pics/%d" % int(time.time()), cam))
                     lolz.start()
