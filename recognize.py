@@ -70,9 +70,9 @@ class RecognizerSubproc():
         self.label_dirs = label_dirs
         self.proc = None
 
-    def _enter__(self):
+    def __enter__(self):
         print "starting recognizer subprocess...",
-        self.proc = subprocess.Popen(["cpp_recognizer/RecogServer"] + label_dirs,
+        self.proc = subprocess.Popen(["cpp_recognizer/RecogServer"] + self.label_dirs,
             stdout=subprocess.PIPE, stdin=subprocess.PIPE)
         print "started."
         return self
@@ -95,7 +95,7 @@ class RecognizerSubproc():
 
 LABEL_DIRS = ["/home/karl/Dropbox/harvested_faces/%s/face" % name for name in ("jie", "karl")]
 
-def main():
+if __name__ == '__main__':
     import sys, getopt
     print help_message
 
@@ -107,7 +107,6 @@ def main():
     cascade_nested = cv2.CascadeClassifier(cascade_fn)
 
     cam = create_capture(video_src)
-    time.sleep(5)
     ret, img = cam.read()
     print ret
 
@@ -116,77 +115,71 @@ def main():
     low_image = shm.zeros(img.shape[0:2], dtype=img.dtype)
 
     with RecognizerSubproc(LABEL_DIRS) as recognizer:
-        run_main_loop(recognizer)
+        while True:
+            ret, img = cam.read()
+            t = clock()    
 
-def run_main_loop(recognizer):
-    while True:
-        ret, img = cam.read()
-        t = clock()    
-
-        with the_lock:
-            low_image[:] = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            low_image[:] = cv2.equalizeHist(low_image)
-
-        if high_proc is None:
-            high_proc = mp.Process(target=high_level_tracker, args=(low_image, stopping, the_lock, possible_targets, cascade,))
-            high_proc.start()
-
-        with the_lock:
-            if len(possible_targets) > 0:
-                for rect in possible_targets:
-                    if contains(targets, rect):
-                        continue
-                    targets.append((rect, 0))
-                possible_targets[:] = []
-
-        vis = img.copy()
-        next_targets = []
-
-        last_time = time.time()
-        for rect, misses in targets:
-            x1, y1, x2, y2 = rect
             with the_lock:
-                roi = low_image[max(0, y1-BUFFER):min(width, y2+BUFFER), max(0, x1-BUFFER):min(height, x2+BUFFER)]
+                low_image[:] = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                low_image[:] = cv2.equalizeHist(low_image)
 
-            # draw_rects(vis, [[max(0, x1-BUFFER), max(0, y1-BUFFER), min(height, x2+BUFFER), min(width, y2+BUFFER)]], (255,0,0))
+            if high_proc is None:
+                high_proc = mp.Process(target=high_level_tracker, args=(low_image, stopping, the_lock, possible_targets, cascade,))
+                high_proc.start()
 
-            subt = clock()
-            s, c = size_and_center(rect)
-            roi_copy = roi.copy()
-            subtargets = detect(roi_copy, cascade_nested, size=(max(30, s[0]-REFIND_BUFFER), max(30, s[1]-REFIND_BUFFER)))
-            if len(subtargets) == 1:
-                sx1, sy1, sx2, sy2 = subtargets[0]
-                if not contains(next_targets, subtargets[0]):
-                    next_targets.append(([max(0, x1-BUFFER)+sx1,max(0, y1-BUFFER)+sy1,max(0, x1-BUFFER)+sx2,max(0, y1-BUFFER)+sy2], 0))
-                vis_roi = vis[max(0, y1-BUFFER):min(width, y2+BUFFER), max(0, x1-BUFFER):min(height, x2+BUFFER)]
-                draw_rects(vis_roi, subtargets, (0, 255, 0))
-            else:
-                # draw_rects(vis, [rect], (0,0,255))
-                if misses < MAX_MISSES:
-                    next_targets.append((rect, misses+1))
-
-        targets = next_targets
-        if is_auto:
-            targeter.update_targets(targets)
-        # print "targets: ", len(targets)
-
-        dt = clock() - t
-        # with the_lock:
-        #     print "time: ", dt*1000
-        draw_str(vis, (20, 20), 'time: %.1f ms' % (dt*1000))
-
-        cv2.imshow('facedetect', vis)
-
-        key = cv2.waitKey(max(1,10-int(dt)))
-        if key == 27:
             with the_lock:
-                stopping.value = chr(1)
-            high_proc.join()
-            break
-        elif key == ord('a'):
-            is_auto = not is_auto
-            print is_auto
+                if len(possible_targets) > 0:
+                    for rect in possible_targets:
+                        if contains(targets, rect):
+                            continue
+                        targets.append((rect, 0))
+                    possible_targets[:] = []
 
-if __name__ == '__main__':
-    main()
+            vis = img.copy()
+            next_targets = []
+
+            last_time = time.time()
+            for rect, misses in targets:
+                x1, y1, x2, y2 = rect
+                with the_lock:
+                    roi = low_image[max(0, y1-BUFFER):min(width, y2+BUFFER), max(0, x1-BUFFER):min(height, x2+BUFFER)]
+
+                # draw_rects(vis, [[max(0, x1-BUFFER), max(0, y1-BUFFER), min(height, x2+BUFFER), min(width, y2+BUFFER)]], (255,0,0))
+
+                subt = clock()
+                s, c = size_and_center(rect)
+                roi_copy = roi.copy()
+                subtargets = detect(roi_copy, cascade_nested, size=(max(30, s[0]-REFIND_BUFFER), max(30, s[1]-REFIND_BUFFER)))
+                if len(subtargets) == 1:
+                    sx1, sy1, sx2, sy2 = subtargets[0]
+                    if not contains(next_targets, subtargets[0]):
+                        next_targets.append(([max(0, x1-BUFFER)+sx1,max(0, y1-BUFFER)+sy1,max(0, x1-BUFFER)+sx2,max(0, y1-BUFFER)+sy2], 0))
+                    vis_roi = vis[max(0, y1-BUFFER):min(width, y2+BUFFER), max(0, x1-BUFFER):min(height, x2+BUFFER)]
+                    draw_rects(vis_roi, subtargets, (0, 255, 0))
+                else:
+                    # draw_rects(vis, [rect], (0,0,255))
+                    if misses < MAX_MISSES:
+                        next_targets.append((rect, misses+1))
+
+            targets = next_targets
+            if is_auto:
+                targeter.update_targets(targets)
+            # print "targets: ", len(targets)
+
+            dt = clock() - t
+            # with the_lock:
+            #     print "time: ", dt*1000
+            draw_str(vis, (20, 20), 'time: %.1f ms' % (dt*1000))
+
+            cv2.imshow('facedetect', vis)
+
+            key = cv2.waitKey(max(1,10-int(dt)))
+            if key == 27:
+                with the_lock:
+                    stopping.value = chr(1)
+                high_proc.join()
+                break
+            elif key == ord('a'):
+                is_auto = not is_auto
+                print is_auto
 
