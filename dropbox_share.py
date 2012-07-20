@@ -7,7 +7,7 @@ from dropbox import client, rest, session
 
 from mail import send_mail_with_link
 from lightbox import get_lightbox_url
-from gif_creator import create_gif_from_files
+from gif_creator import create_mp4_in_dir
 
 FOLDER = 'pics'
 
@@ -62,20 +62,19 @@ while True:
     folders_to_add = folders_to_add.difference(seen_folders)
 
     for folder in folders_to_add:
-        remote_folder_path = "/%s" % folder
-
-        files = ["%s/%s/%s" % (FOLDER, folder, fname) for fname in sorted(os.listdir(FOLDER+'/'+folder), key=lambda x: int(x.split('.')[0]))]
 
         # convert timestamp to human readable
-        out_fname = datetime.datetime.fromtimestamp(int(folder)).strftime('%B %d %Y %I:%M%p.gif')
+        out_fname = datetime.datetime.fromtimestamp(int(folder)).strftime('%B %d %Y %I:%M%p.mp4')
 
         local_path = '%s/%s/%s' % (FOLDER, folder, out_fname)
-        create_gif_from_files(files, local_path)
+        local_dir = '%s/%s' % (FOLDER, folder)
+        create_mp4_in_dir(local_dir, out_fname)
+        # create_gif_from_files(files, local_path)
 
-        remote_path="/%s/%s" % (folder, out_fname)
+        remote_folder_path = "/%s" % "saycheeseanddie"
+        remote_path="/%s/%s" % ("saycheeseanddie", out_fname)
         with open(local_path) as f:
             try:
-                cl.file_create_folder(remote_folder_path)
                 upload_data = cl.put_file(full_path=remote_path,
                                           file_obj=f,
                                           )
