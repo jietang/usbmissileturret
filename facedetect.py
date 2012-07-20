@@ -290,7 +290,7 @@ if __name__ == '__main__':
                 last_cmd_sent = targeter.update_targets(targets)
                 if last_cmd_sent == STOP and len(targets):
                     locked_counter += 1
-                if locked_counter > 20 and firing and primed:
+                if locked_counter > 5 and firing and primed:
                     print "firing"
                     lolz = threading.Thread(target=lolz_thread, args=("pics/%d" % int(time.time()), cam))
                     lolz.start()

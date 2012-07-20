@@ -1,6 +1,7 @@
 import datetime
 import os
 import pickle
+import time
 
 from dropbox import client, rest, session
 
@@ -82,10 +83,9 @@ while True:
                 send_mail_with_link(get_lightbox_url(share_dict['url'], out_fname))
             except rest.ErrorResponse:
                 pass
+        seen_folders.add(folder)
 
-    # TODO remove this
-    break
-    time.sleep(60)
+    time.sleep(3)
 
 
 
