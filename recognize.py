@@ -1,5 +1,6 @@
 import multiprocessing as mp
 import os
+import socket
 import subprocess
 import time
 
@@ -65,35 +66,35 @@ def scale_to_recognizer_input_size(image):
     cv.Resize(image, mat)
     return mat
 
-class RecognizerSubproc():
-    def __init__(self, label_dirs):
-        self.label_dirs = label_dirs
-        self.proc = None
+class Recognizer():
+    HOSTPORT = ("karl-desktop0", 2232)
+
+    def __init__(self):
+        self.sock = None
 
     def __enter__(self):
-        print "starting recognizer subprocess...",
-        self.proc = subprocess.Popen(["cpp_recognizer/RecogServer"] + self.label_dirs,
-            stdout=subprocess.PIPE, stdin=subprocess.PIPE)
-        print "started."
+        print "connecting to recognizer...",
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.connect(Recognizer.HOSTPORT)
+        self.rfile = self.sock.makefile("r")
+        print "connected."
         return self
 
     def __exit__(self, *exc_info):
-        self.proc.stdin.close()
-        print "closed pipe to recognizer subprocess. waiting for it to terminate..."
-        self.proc.wait()
-        print "terminated with exit code", self.proc.returncode
-        self.proc = None
+        print "closing connection to recognizer...",
+        self.rfile.close()
+        self.sock.close()
+        print "closed."
     
     def predict(self, image):
-        assert self.proc, "you must call predict inside a 'with' block"
-        data = scale_to_recognizer_input_size(image).data
+        assert self.sock, "you must call predict inside a 'with' block"
+        mat = scale_to_recognizer_input_size(image)
+        data = "".join("".join(chr(int(mat[i, j])) for j in xrange(RECOG_SIZE)) for i in xrange(RECOG_SIZE))
         assert len(data) == NUM_PIXELS, "data had wrong length: %d" % len(data)
-        self.proc.stdin.write(data)
-        label = int(self.stdout.readline().strip())
-        confidence = float(self.stdout.readline().strip())
+        self.sock.sendall(data)
+        label = int(self.rfile.readline().strip())
+        confidence = float(self.rfile.readline().strip())
         return label, confidence
-
-LABEL_DIRS = ["/home/karl/Dropbox/harvested_faces/%s/face" % name for name in ("jie", "karl")]
 
 if __name__ == '__main__':
     import sys, getopt
@@ -114,7 +115,7 @@ if __name__ == '__main__':
     height = img.shape[1]
     low_image = shm.zeros(img.shape[0:2], dtype=img.dtype)
 
-    with RecognizerSubproc(LABEL_DIRS) as recognizer:
+    with Recognizer() as recognizer:
         while True:
             ret, img = cam.read()
             t = clock()    
@@ -132,14 +133,14 @@ if __name__ == '__main__':
                     for rect in possible_targets:
                         if contains(targets, rect):
                             continue
-                        targets.append((rect, 0))
+                        targets.append((rect, 0, None))
                     possible_targets[:] = []
 
             vis = img.copy()
             next_targets = []
 
             last_time = time.time()
-            for rect, misses in targets:
+            for rect, misses, _ in targets:
                 x1, y1, x2, y2 = rect
                 with the_lock:
                     roi = low_image[max(0, y1-BUFFER):min(width, y2+BUFFER), max(0, x1-BUFFER):min(height, x2+BUFFER)]
@@ -153,17 +154,18 @@ if __name__ == '__main__':
                 if len(subtargets) == 1:
                     sx1, sy1, sx2, sy2 = subtargets[0]
                     if not contains(next_targets, subtargets[0]):
-                        next_targets.append(([max(0, x1-BUFFER)+sx1,max(0, y1-BUFFER)+sy1,max(0, x1-BUFFER)+sx2,max(0, y1-BUFFER)+sy2], 0))
+                        next_targets.append(([max(0, x1-BUFFER)+sx1,max(0, y1-BUFFER)+sy1,max(0, x1-BUFFER)+sx2,max(0, y1-BUFFER)+sy2], 0, None))
                     vis_roi = vis[max(0, y1-BUFFER):min(width, y2+BUFFER), max(0, x1-BUFFER):min(height, x2+BUFFER)]
                     draw_rects(vis_roi, subtargets, (0, 255, 0))
+                    
+                    print "prediction:", recognizer.predict(cv.fromarray(roi[sx1:sx2, sy1:sy2]))
+
                 else:
                     # draw_rects(vis, [rect], (0,0,255))
                     if misses < MAX_MISSES:
-                        next_targets.append((rect, misses+1))
+                        next_targets.append((rect, misses+1, None))
 
             targets = next_targets
-            if is_auto:
-                targeter.update_targets(targets)
             # print "targets: ", len(targets)
 
             dt = clock() - t
