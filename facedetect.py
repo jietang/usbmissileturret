@@ -13,11 +13,10 @@ import sharedmem as shm
 from common import clock, draw_str
 from video import create_capture
 
-from client import RemoteLauncher
 from targeting import Targeter
 from util import detect, draw_rects, size_and_center, norm, compare, contains
 
-from usbturret import UP, DOWN, LEFT, RIGHT, STOP
+from usbturret import UP, DOWN, LEFT, RIGHT, STOP, USBMissileLauncher
 
 help_message = '''
 USAGE: facedetect.py [--cascade <cascade_fn>] [--nested-cascade <cascade_fn>] [<video_source>]
@@ -135,25 +134,46 @@ def controller(controller_state, should_stop, controller_cv, lock):
 
         send_command(cmd)
 
+launcher = USBMissileLauncher()
 def add_controller_command(timeout_x, timeout_y, cmd):
-    global controller_state, controller_cv
-    (new_x_timeout, new_x_cmd), (new_y_timeout, new_y_cmd) = controller_state
+    # given a launcher, execute this command completely
+    cur_time = time.time()
 
-    if (cmd & UP) or (cmd & DOWN):
-        new_y_cmd = cmd
-        new_y_timeout = timeout_y
-    if (cmd & LEFT) or (cmd & RIGHT):
-        new_x_cmd = cmd
-        new_x_timeout = timeout_x
-    if cmd & STOP:
-        new_x_timeout = time.time()
-        new_y_timeout = time.time()
+    x_cmd = cmd & (LEFT | RIGHT)
+    y_cmd = cmd & (UP | DOWN)
 
-    with controller_cv:
-        controller_state[0] = [new_x_timeout, new_x_cmd]
-        controller_state[1] = [new_y_timeout, new_y_cmd]
-        #print "SENDING CMD: ", controller_state, time.time()
-        controller_cv.notify()
+    cmds = [(timeout_x, x_cmd), (timeout_y, y_cmd)]
+    while True:
+        cmd = 0
+        for t, c in cmds:
+            if t > time.time():
+                cmd |= c
+        if not cmd:
+            break
+        next_time = max(sorted(cmds)[0][0] - time.time(), 0.001)
+
+        launcher.send_command(cmd)
+        time.sleep(next_time)
+    launcher.send_command(STOP)
+
+    # global controller_state, controller_cv
+    # (new_x_timeout, new_x_cmd), (new_y_timeout, new_y_cmd) = controller_state
+
+    # if (cmd & UP) or (cmd & DOWN):
+    #     new_y_cmd = cmd
+    #     new_y_timeout = timeout_y
+    # if (cmd & LEFT) or (cmd & RIGHT):
+    #     new_x_cmd = cmd
+    #     new_x_timeout = timeout_x
+    # if cmd & STOP:
+    #     new_x_timeout = time.time()
+    #     new_y_timeout = time.time()
+
+    # with controller_cv:
+    #     controller_state[0] = [new_x_timeout, new_x_cmd]
+    #     controller_state[1] = [new_y_timeout, new_y_cmd]
+    #     #print "SENDING CMD: ", controller_state, time.time()
+    #     controller_cv.notify()
 
 
 
@@ -204,7 +224,6 @@ if __name__ == '__main__':
 
     primed = True
     firing = False
-    launcher = RemoteLauncher()
     locked_counter = 0
 
     pic_idx = int(sorted(os.listdir('pics'))[-1].split('-')[0])+1 if os.listdir('pics') else 0

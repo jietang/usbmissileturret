@@ -11,11 +11,11 @@ from util import size_and_center, norm, diff
 TOLERANCE = 50
 SUBTOLERANCE_X = TOLERANCE*0.25
 SUBTOLERANCE_Y = TOLERANCE*1.0
-MAX_MOVE_SLEEP_TIME_X = 0.0004
-P_MOVE_SLEEP_X = 0.000005
+MAX_MOVE_SLEEP_TIME_X = 0.035
+P_MOVE_SLEEP_X = 0.0004
 # P_MOVE_SLEEP_X = 0.0001
-MAX_MOVE_SLEEP_TIME_Y = 0.0004
-P_MOVE_SLEEP_Y = 0.000005
+MAX_MOVE_SLEEP_TIME_Y = 0.02
+P_MOVE_SLEEP_Y = 0.0002
 REFRESH_FREQUENCY = 0.06
 DISTANCE_CORRECTION = 0.1
 
@@ -88,7 +88,7 @@ class Targeter(object):
 
             if cmd_to_add:
                 timeout_x = min(abs(delta[0])*P_MOVE_SLEEP_X, MAX_MOVE_SLEEP_TIME_Y)
-                # print "move time: ", abs(delta[0])*P_MOVE_SLEEP_X
+                print "move time x: ", abs(delta[0])*P_MOVE_SLEEP_X
                 current_cmd |= cmd_to_add
 
             cmd_to_add = None

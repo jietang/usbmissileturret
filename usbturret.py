@@ -82,7 +82,6 @@ class USBMissileLauncher(object):
     def send_command(self, c):
         c = validate_command(c, self.last_status)
         if c:
-            print "sending command: ", c
             bytes = [0]*8
             bytes[0] = 2
             bytes[1] = c
