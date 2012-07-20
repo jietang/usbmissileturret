@@ -286,7 +286,6 @@ if __name__ == '__main__':
                 #     print "subtarget detect: ", clock() - subt
                 if len(subtargets) == 1:
                     sx1, sy1, sx2, sy2 = subtargets[0]
-<<<<<<< HEAD
                     vis_roi = vis[max(0, y1-BUFFER):min(width, y2+BUFFER), max(0, x1-BUFFER):min(height, x2+BUFFER)]
                     
                     if recognizing:
