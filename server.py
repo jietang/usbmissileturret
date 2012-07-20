@@ -5,8 +5,12 @@ import select
 import threading
 import time
 
+# new server that gets (timeout_x, timeout_y, cmd) tuples
+# has its own command loop for sending commands
+# when it gets a cmd, it adds it to the state
+
 LAUNCHER_EXIT = "Shut"
-POLL_RATE = 0.02
+POLL_RATE = 0.005
 STATUS_INTERVAL = 0.5 # 250ms status poll
 
 class LauncherServer(object):

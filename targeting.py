@@ -17,6 +17,11 @@ P_MOVE_SLEEP_X = 0.000005
 MAX_MOVE_SLEEP_TIME_Y = 0.0004
 P_MOVE_SLEEP_Y = 0.000005
 REFRESH_FREQUENCY = 0.06
+DISTANCE_CORRECTION = 0.1
+
+# (100, 120) (150, 70) 
+def distance_correction(size):
+    return max(0, -1.0*(size-100)+120)
 
 class Targeter(object):
     def __init__(self, xmax, ymax, send_cmd_fn):
@@ -32,6 +37,8 @@ class Targeter(object):
         if rect_misses[1] == 0:
             size, center = size_and_center(rect_misses[0])
             self.target = center
+            print size[0], distance_correction(size[0])
+            self.correction = distance_correction(size[0])
         else:
             self.target = None
 

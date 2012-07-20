@@ -2,6 +2,9 @@
 import multiprocessing as mp
 import time
 import threading
+import os
+import socket
+import struct
 
 import cv2
 import cv2.cv as cv
@@ -44,7 +47,6 @@ controller_state = []
 controller_state.append([0.0, LEFT])
 controller_state.append([0.0, DOWN])
 
-
 def draw_command(img, command):
     if not command:
         return
@@ -70,6 +72,17 @@ def draw_command(img, command):
         h2 = 0.66
 
     cv2.rectangle(img, (int(h1*height),int(w1*width)), (int(h2*height), int(w2*width)), (255, 0, 0), -1)
+
+def lolz_thread(basepath, cam):
+    start = time.time()
+    last_time = time.time()
+    i = 0
+    while time.time() - start < 1.1:
+        ret, img = cam.read()
+        if time.time() - last_time > 0.0:
+            last_time = time.time()
+            cv.SaveImage("%s-%d.jpg" % (basepath, i), cv.fromarray(img))
+            i += 1
 
 def controller(controller_state, should_stop, controller_cv, lock):
     launcher = RemoteLauncher()
@@ -142,6 +155,8 @@ def add_controller_command(timeout_x, timeout_y, cmd):
         #print "SENDING CMD: ", controller_state, time.time()
         controller_cv.notify()
 
+
+
 def high_level_tracker(image, should_stop, lock, targets, cascade):
     # 1 thread, high level tracking
     while True:
@@ -191,6 +206,8 @@ if __name__ == '__main__':
     firing = False
     launcher = RemoteLauncher()
     locked_counter = 0
+
+    pic_idx = int(sorted(os.listdir('pics'))[-1].split('-')[0])+1 if os.listdir('pics') else 0
 
     while True:
         t = clock()
@@ -252,7 +269,13 @@ if __name__ == '__main__':
                 if locked_counter > 20 and firing and primed:
                     print "firing"
                     launcher.fire()
+
+                    lolz = threading.Thread(target=lolz_thread, args=("pics/%d" % pic_idx, cam))
+                    lolz.start()
                     time.sleep(1.2)
+                    lolz.join()
+                    pic_idx += 1
+
                     primed = False
                     locked_counter = 0
 
@@ -284,3 +307,4 @@ if __name__ == '__main__':
         elif key == ord('t'):
             firing = not firing
             print "LIVE FIRE: ", firing
+    cv2.destroyAllWindows()
