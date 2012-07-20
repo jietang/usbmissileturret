@@ -88,7 +88,7 @@ def lolz_thread(basepath, cam):
     last_time = time.time()
     i = 0
     os.mkdir(basepath)
-    while time.time() - start < 1.4:
+    while time.time() - start < 4:
         ret, img = cam.read()
         if time.time() - last_time > 0.0:
             last_time = time.time()
