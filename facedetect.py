@@ -31,7 +31,7 @@ USAGE: facedetect.py [--cascade <cascade_fn>] [--nested-cascade <cascade_fn>] [<
 
 VELOCITY_DECAY = 0.75
 KARLNESS_DECAY = 0.75
-KARLNESS_THRESHOLD = 0.6
+KARLNESS_THRESHOLD = 0.9
 BUFFER = 50
 REFIND_BUFFER = 30
 MAX_MISSES = 5
@@ -294,10 +294,10 @@ if __name__ == '__main__':
                         for i, (label, confidence) in enumerate(predictions):
                             color = recog.LABEL_COLORS[label]
                             who = recog.LABELS[label]
-                            cv2.putText(vis_roi,
-                                "%s (%s)" % (who, confidence),
-                                (sx1 + 2, sy1 + 20 + 20 * i),
-                                cv2.FONT_HERSHEY_PLAIN, 1.1, color)
+                            # cv2.putText(vis_roi,
+                            #     "%s (%s)" % (who, confidence),
+                            #     (sx1 + 2, sy1 + 20 + 20 * i),
+                            #     cv2.FONT_HERSHEY_PLAIN, 1.1, color)
                         winning_label = recog.get_overall_prediction(predictions)
 
                         #rect_color = recog.LABEL_COLORS[winning_label]
