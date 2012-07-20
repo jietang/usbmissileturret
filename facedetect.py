@@ -79,11 +79,12 @@ def lolz_thread(basepath, cam):
     start = time.time()
     last_time = time.time()
     i = 0
-    while time.time() - start < 1.1:
+    os.mkdir(basepath)
+    while time.time() - start < 1.6:
         ret, img = cam.read()
         if time.time() - last_time > 0.0:
             last_time = time.time()
-            cv.SaveImage("%s-%d.jpg" % (basepath, i), cv.fromarray(img))
+            cv.SaveImage("%s/%d.jpg" % (basepath, i), cv.fromarray(img))
             i += 1
 
 def controller(controller_state, should_stop, controller_cv, lock):
@@ -229,8 +230,6 @@ if __name__ == '__main__':
     firing = False
     locked_counter = 0
 
-    pic_idx = int(sorted(os.listdir('pics'))[-1].split('-')[0])+1 if os.listdir('pics') else 0
-
     while True:
         t = clock()
         ret, img = cam.read()
@@ -285,7 +284,6 @@ if __name__ == '__main__':
         if is_auto:
             if firing and not primed:
                 launcher.prime()
-                time.sleep(1.2)
                 primed = True
                 locked_counter = 0
             else: # either not firing, or already primed
@@ -294,13 +292,10 @@ if __name__ == '__main__':
                     locked_counter += 1
                 if locked_counter > 20 and firing and primed:
                     print "firing"
-                    launcher.fire()
-
-                    lolz = threading.Thread(target=lolz_thread, args=("pics/%d" % pic_idx, cam))
+                    lolz = threading.Thread(target=lolz_thread, args=("pics/%d" % int(time.time()), cam))
                     lolz.start()
-                    time.sleep(1.2)
+                    launcher.fire()
                     lolz.join()
-                    pic_idx += 1
 
                     primed = False
                     locked_counter = 0
